@@ -1,0 +1,71 @@
+trigger:
+  - main
+
+variables:
+  buildConfiguration: 'Release'
+  solution: '**/*.sln'
+  project: '**/*.csproj'
+  webAppName: 'your-app-service-name'
+  azureSubscription: 'your-azure-subscription-name'
+  appServiceSlotStaging: 'staging'
+  appServiceSlotProduction: 'production'
+
+pool:
+  vmImage: 'windows-latest'
+
+steps:
+- task: UseDotNet@2
+  inputs:
+    packageType: 'sdk'
+    version: '6.0.x'
+    installationPath: $(Agent.ToolsDirectory)/dotnet
+
+- task: NuGetToolInstaller@1
+
+- task: NuGetCommand@2
+  inputs:
+    restoreSolution: '$(solution)'
+
+- task: SonarQubePrepare@5
+  inputs:
+    SonarQube: 'SonarQubeServiceConnection'
+    scannerMode: 'MSBuild'
+    projectKey: 'dotnet-webapp'
+    projectName: 'DotNet WebApp'
+
+- task: VSBuild@1
+  inputs:
+    solution: '$(solution)'
+    msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true'
+    platform: 'Any CPU'
+    configuration: '$(buildConfiguration)'
+
+- task: VSTest@2
+  inputs:
+    platform: 'Any CPU'
+    configuration: '$(buildConfiguration)'
+
+- task: SonarQubeAnalyze@5
+
+- task: SonarQubePublish@5
+  inputs:
+    pollingTimeoutSec: '300'
+
+- task: AzureWebApp@1
+  inputs:
+    azureSubscription: '$(azureSubscription)'
+    appType: 'webApp'
+    appName: '$(webAppName)'
+    deployToSlotOrASE: true
+    resourceGroupName: 'your-resource-group'
+    slotName: '$(appServiceSlotStaging)'
+    package: '$(System.DefaultWorkingDirectory)/**/*.zip'
+
+- task: AzureAppServiceManage@0
+  inputs:
+    azureSubscription: '$(azureSubscription)'
+    Action: 'Swap Slots'
+    WebAppName: '$(webAppName)'
+    ResourceGroupName: 'your-resource-group'
+    SourceSlot: '$(appServiceSlotStaging)'
+    TargetSlot: '$(appServiceSlotProduction)'
